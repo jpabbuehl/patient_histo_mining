@@ -1,0 +1,193 @@
+---
+title: "Analysis for Natacha"
+author: "jean-paul abbuehl"
+date: "12/07/2014"
+output: html_document
+---
+
+Load CSV datasets and set correct classes for columns
+```{r}
+HighTumorInfLN_data<-read.table('High tumor infiltrated LN.csv',head=TRUE,sep=",",row.names=NULL,stringsAsFactors = FALSE)
+id<-c(9:ncol(HighTumorInfLN_data))
+HighTumorInfLN_data[,id]<-as.numeric(as.character(unlist(HighTumorInfLN_data[,id])))
+
+LowTumorInfLN_data<-read.table('Low tumor infiltrated LN.csv',head=TRUE,sep=",",row.names=NULL,stringsAsFactors = FALSE)
+id<-c(8:ncol(LowTumorInfLN_data))
+LowTumorInfLN_data[,id]<-as.numeric(as.character(unlist(LowTumorInfLN_data[,id])))
+
+LN_responder<-read.table('LN from Responder.csv',head=TRUE,sep=",",row.names=NULL,stringsAsFactors = FALSE)
+id<-c(8:ncol(LN_responder))
+LN_responder[,id]<-as.numeric(as.character(unlist(LN_responder[,id])))
+
+LN_nonresponder<-read.table('LN from Non Responder.csv',head=TRUE,sep=",",row.names=NULL,stringsAsFactors = FALSE)
+id<-c(9:ncol(LN_nonresponder))
+LN_nonresponder[,id]<-as.numeric(as.character(unlist(LN_nonresponder[,id])))
+```
+
+Process raw into full normalized tidy dataset
+Median normalization required for cross correlation analysis. Median should better preserve relationship between measured parameters
+```{r, echo=FALSE}
+HighTumorInfLN_data[,9:(ncol(HighTumorInfLN_data)-2)]<-apply(HighTumorInfLN_data[,9:(ncol(HighTumorInfLN_data)-2)],2,function(x){x-median(x,na.rm=TRUE)})
+#Recalculate ratio CD8/FoxP3 in tumor and stroma
+HighTumorInfLN_data$Ratio.CD8.FoxP3.tumor<-HighTumorInfLN_data$CD8.tumor/HighTumorInfLN_data$FoxP3.tumor
+HighTumorInfLN_data$Ratio.CD8.FoxP3.stroma<-HighTumorInfLN_data$CD8.stroma/HighTumorInfLN_data$FoxP3.stroma
+
+LowTumorInfLN_data[,8:(ncol(LowTumorInfLN_data)-2)]<-apply(LowTumorInfLN_data[,8:(ncol(LowTumorInfLN_data)-2)],2,function(x){x-median(x,na.rm=TRUE)})
+#Recalculate ratio CD8/FoxP3 in tumor and stroma
+LowTumorInfLN_data$Ratio.CD8.FoxP3.tumor<-HighTumorInfLN_data$CD8.tumor/HighTumorInfLN_data$FoxP3.tumor
+LowTumorInfLN_data$Ratio.CD8.FoxP3.stroma<-HighTumorInfLN_data$CD8.stroma/HighTumorInfLN_data$FoxP3.stroma
+
+LN_responder[,8:(ncol(LN_responder)-2)]<-apply(LN_responder[,8:(ncol(LN_responder)-2)],2,function(x){x-median(x,na.rm=TRUE)})
+#Recalculate ratio CD8/FoxP3 in tumor and stroma
+LN_responder$Ratio.CD8.FoxP3.tumor<-LN_responder$CD8.tumor/LN_responder$FoxP3.tumor
+LN_responder$Ratio.CD8.FoxP3.stroma<-LN_responder$CD8.stroma/LN_responder$FoxP3.stroma
+
+LN_nonresponder[,9:(ncol(LN_nonresponder)-2)]<-apply(LN_nonresponder[,9:(ncol(LN_nonresponder)-2)],2,function(x){x-median(x,na.rm=TRUE)})
+#Recalculate ratio CD8/FoxP3 in tumor and stroma
+LN_nonresponder$Ratio.CD8.FoxP3.tumor<-LN_nonresponder$CD8.tumor/LN_nonresponder$FoxP3.tumor
+LN_nonresponder$Ratio.CD8.FoxP3.stroma<-LN_nonresponder$CD8.stroma/LN_nonresponder$FoxP3.stroma
+```
+
+Process High Tumor infiltrated LN
+```{r}
+library(Hmisc)
+library(corrplot)
+library(qgraph)
+data<-as.matrix(HighTumorInfLN_data[,9:74])
+data<-rcorr(data)
+
+col1 <- colorRampPalette(c("red", "white", "green"))
+tiff(filename = "HighTumorInfLN correlation map.tiff", width =2000, height = 2000,units = "px", pointsize = 12, bg = "white", res = NA)
+corrplot(data$r,method="color",type="full",order="hclust",p.mat = data$P, insig = "blank",col=col1(100),tl.col = "black",addgrid.col = "gray50",diag=FALSE,tl.cex=1, cl.pos = "b",cl.cex=3,cl.offset=0.1,sig.level = 0.1)
+dev.off()
+
+tiff(filename = "HighTumorInfLN correlation map without pval.tiff", width =2000, height = 2000,units = "px", pointsize = 12, bg = "white", res = NA)
+corrplot(data$r,method="color",type="full",order="hclust",col=col1(100),tl.col = "black",addgrid.col = "gray50",diag=FALSE,tl.cex=1, cl.pos = "b",cl.cex=3,cl.offset=0.1)
+dev.off()
+
+staining_groups<-list(HMB45=c(1:6),MelanA=c(7:12),CD8=c(13:18),CD4=c(19:24),CD19=c(25:30),FoxP3=c(31:36),Podoplanin=c(37:42),Prox1=c(43:48),VEGFc=c(49:54),IDO=c(55:60),iNOS=c(61:66))
+colnames(data$r)<-sub('HMB45.','',colnames(data$r))
+colnames(data$r)<-sub('Melan.A.','',colnames(data$r))
+colnames(data$r)<-sub('CD8.','',colnames(data$r))
+colnames(data$r)<-sub('CD4.','',colnames(data$r))
+colnames(data$r)<-sub('CD19.','',colnames(data$r))
+colnames(data$r)<-sub('FoxP3.','',colnames(data$r))
+colnames(data$r)<-sub('Podoplanin.','',colnames(data$r))
+colnames(data$r)<-sub('Prox.1.','',colnames(data$r))
+colnames(data$r)<-sub('VEGF.C.','',colnames(data$r))
+colnames(data$r)<-sub('IDO.','',colnames(data$r))
+colnames(data$r)<-sub('iNOS.','',colnames(data$r))
+rownames(data$r)<-colnames(data$r)
+rownames(data$r)<-rep(c('T','S','C','LN','CT','TO'),11)
+colnames(data$r)<-rownames(data$r)
+tiff(filename = "HighTumorInfLN correlation circular graph.tiff", width =3000, height = 2000,units = "px", pointsize = 12, bg = "white", res = NA)
+Q<-qgraph(data$r,minimum=0.8,threshold=0.8,cut=0.95,vsize=3,groups=staining_groups,legend.cex=3,edge.width=.5)
+title("High Tumor infiltrated LN Dataset",line=-6,cex.main = 10)
+dev.off()
+```
+
+Process Low infiltrated LN
+```{r}
+data<-as.matrix(LowTumorInfLN_data[,8:73])
+data<-rcorr(data)
+
+col1 <- colorRampPalette(c("red", "white", "green"))
+tiff(filename = "LowTumorInfLN correlation map.tiff", width =2000, height = 2000,units = "px", pointsize = 12, bg = "white", res = NA)
+corrplot(data$r,method="color",type="full",order="hclust",p.mat = data$P, insig = "blank",col=col1(100),tl.col = "black",addgrid.col = "gray50",diag=FALSE,tl.cex=1, cl.pos = "b",cl.cex=3,cl.offset=0.1,sig.level = 0.1)
+dev.off()
+
+tiff(filename = "LowTumorInfLN correlation map without pval.tiff", width =2000, height = 2000,units = "px", pointsize = 12, bg = "white", res = NA)
+corrplot(data$r,method="color",type="full",order="hclust",col=col1(100),tl.col = "black",addgrid.col = "gray50",diag=FALSE,tl.cex=1, cl.pos = "b",cl.cex=3,cl.offset=0.1)
+dev.off()
+
+staining_groups<-list(HMB45=c(1:6),MelanA=c(7:12),CD8=c(13:18),CD4=c(19:24),CD19=c(25:30),FoxP3=c(31:36),Podoplanin=c(37:42),Prox1=c(43:48),VEGFc=c(49:54),IDO=c(55:60),iNOS=c(61:66))
+colnames(data$r)<-sub('HMB45.','',colnames(data$r))
+colnames(data$r)<-sub('Melan.A.','',colnames(data$r))
+colnames(data$r)<-sub('CD8.','',colnames(data$r))
+colnames(data$r)<-sub('CD4.','',colnames(data$r))
+colnames(data$r)<-sub('CD19.','',colnames(data$r))
+colnames(data$r)<-sub('FoxP3.','',colnames(data$r))
+colnames(data$r)<-sub('Podoplanin.','',colnames(data$r))
+colnames(data$r)<-sub('Prox.1.','',colnames(data$r))
+colnames(data$r)<-sub('VEGF.C.','',colnames(data$r))
+colnames(data$r)<-sub('IDO.','',colnames(data$r))
+colnames(data$r)<-sub('iNOS.','',colnames(data$r))
+rownames(data$r)<-colnames(data$r)
+rownames(data$r)<-rep(c('T','S','C','LN','CT','TO'),11)
+colnames(data$r)<-rownames(data$r)
+tiff(filename = "LowTumorInfLN correlation circular graph.tiff", width =3000, height = 2000,units = "px", pointsize = 12, bg = "white", res = NA)
+Q<-qgraph(data$r,minimum=0.9,threshold=0.9,vsize=3,groups=staining_groups,legend.cex=3)
+title("Low Tumor infiltrated LN Dataset",line=-6,cex.main = 10)
+dev.off()
+```
+
+Process Responders
+```{r}
+data<-as.matrix(LNresponder[,8:73])
+data<-rcorr(data)
+
+col1 <- colorRampPalette(c("red", "white", "green"))
+tiff(filename = "LN responders correlation map.tiff", width =2000, height = 2000,units = "px", pointsize = 12, bg = "white", res = NA)
+corrplot(data$r,method="color",type="full",order="hclust",p.mat = data$P, insig = "blank",col=col1(100),tl.col = "black",addgrid.col = "gray50",diag=FALSE,tl.cex=1, cl.pos = "b",cl.cex=3,cl.offset=0.1,sig.level = 0.1)
+dev.off()
+
+tiff(filename = "LN responders correlation map without pval.tiff", width =2000, height = 2000,units = "px", pointsize = 12, bg = "white", res = NA)
+corrplot(data$r,method="color",type="full",order="hclust",col=col1(100),tl.col = "black",addgrid.col = "gray50",diag=FALSE,tl.cex=1, cl.pos = "b",cl.cex=3,cl.offset=0.1)
+dev.off()
+
+staining_groups<-list(HMB45=c(1:6),MelanA=c(7:12),CD8=c(13:18),CD4=c(19:24),CD19=c(25:30),FoxP3=c(31:36),Podoplanin=c(37:42),Prox1=c(43:48),VEGFc=c(49:54),IDO=c(55:60),iNOS=c(61:66))
+colnames(data$r)<-sub('HMB45.','',colnames(data$r))
+colnames(data$r)<-sub('Melan.A.','',colnames(data$r))
+colnames(data$r)<-sub('CD8.','',colnames(data$r))
+colnames(data$r)<-sub('CD4.','',colnames(data$r))
+colnames(data$r)<-sub('CD19.','',colnames(data$r))
+colnames(data$r)<-sub('FoxP3.','',colnames(data$r))
+colnames(data$r)<-sub('Podoplanin.','',colnames(data$r))
+colnames(data$r)<-sub('Prox.1.','',colnames(data$r))
+colnames(data$r)<-sub('VEGF.C.','',colnames(data$r))
+colnames(data$r)<-sub('IDO.','',colnames(data$r))
+colnames(data$r)<-sub('iNOS.','',colnames(data$r))
+rownames(data$r)<-colnames(data$r)
+rownames(data$r)<-rep(c('T','S','C','LN','CT','TO'),11)
+colnames(data$r)<-rownames(data$r)
+tiff(filename = "LN responders correlation circular graph.tiff", width =3000, height = 2000,units = "px", pointsize = 12, bg = "white", res = NA)
+Q<-qgraph(data$r,minimum=0.95,threshold=0.95,cut=0.99,vsize=3,groups=staining_groups,legend.cex=3,edge.width=.5)
+title("LN responders dataset",line=-6,cex.main = 10)
+dev.off()
+```
+
+
+LN non responders datatset
+```{r}
+data<-as.matrix(LN_nonresponder[,9:74])
+data<-rcorr(data)
+
+col1 <- colorRampPalette(c("red", "white", "green"))
+tiff(filename = "LN non responders correlation map.tiff", width =2000, height = 2000,units = "px", pointsize = 12, bg = "white", res = NA)
+corrplot(data$r,method="color",type="full",order="hclust",p.mat = data$P, insig = "blank",col=col1(100),tl.col = "black",addgrid.col = "gray50",diag=FALSE,tl.cex=1, cl.pos = "b",cl.cex=3,cl.offset=0.1,sig.level = 0.1)
+dev.off()
+
+tiff(filename = "LN non responders correlation map without pval.tiff", width =2000, height = 2000,units = "px", pointsize = 12, bg = "white", res = NA)
+corrplot(data$r,method="color",type="full",order="hclust",col=col1(100),tl.col = "black",addgrid.col = "gray50",diag=FALSE,tl.cex=1, cl.pos = "b",cl.cex=3,cl.offset=0.1)
+dev.off()
+
+staining_groups<-list(HMB45=c(1:6),MelanA=c(7:12),CD8=c(13:18),CD4=c(19:24),CD19=c(25:30),FoxP3=c(31:36),Podoplanin=c(37:42),Prox1=c(43:48),VEGFc=c(49:54),IDO=c(55:60),iNOS=c(61:66))
+colnames(data$r)<-sub('HMB45.','',colnames(data$r))
+colnames(data$r)<-sub('Melan.A.','',colnames(data$r))
+colnames(data$r)<-sub('CD8.','',colnames(data$r))
+colnames(data$r)<-sub('CD4.','',colnames(data$r))
+colnames(data$r)<-sub('CD19.','',colnames(data$r))
+colnames(data$r)<-sub('FoxP3.','',colnames(data$r))
+colnames(data$r)<-sub('Podoplanin.','',colnames(data$r))
+colnames(data$r)<-sub('Prox.1.','',colnames(data$r))
+colnames(data$r)<-sub('VEGF.C.','',colnames(data$r))
+colnames(data$r)<-sub('IDO.','',colnames(data$r))
+colnames(data$r)<-sub('iNOS.','',colnames(data$r))
+rownames(data$r)<-colnames(data$r)
+rownames(data$r)<-rep(c('T','S','C','LN','CT','TO'),11)
+colnames(data$r)<-rownames(data$r)
+tiff(filename = "LN non responders correlation circular graph.tiff", width =3000, height = 2000,units = "px", pointsize = 12, bg = "white", res = NA)
+Q<-qgraph(data$r,minimum=0.8,threshold=0.8,cut=0.95,vsize=3,groups=staining_groups,legend.cex=3,edge.width=.5)
+title("LN responders dataset",line=-6,cex.main = 10)
+dev.off()
+```
